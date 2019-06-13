@@ -112,6 +112,12 @@ static const unsigned sMaxNumNotes = 16;
 MidiNoteList<sMaxNumNotes> midiNotes[3];
 
 
+void blink_MIDI_LED(void)
+{
+  // pin PC0 is connected to MIDI activity LED
+  PORTC ^= (1 << 0);
+}
+
 
 // -----------------------------------------------------------------------------
 
@@ -149,6 +155,15 @@ void handleNotesChanged(bool isFirstNote = false, byte channel = 1)
         byte currentNote = 0;
         if (midiNotes[channel - 1].getLast(currentNote))
         {
+            if (isFirstNote)
+            {
+                handleGateChanged(true, channel);
+            }
+            else
+            {
+                pulseGate(channel); // Retrigger envelopes. Remove for legato effect.
+            }
+
             if ((currentNote - base_note) > MAX_SEMITONE)
             {
               // example: if we receive note 100, we need to check if it's higher or not to the max note the DAC can produce
@@ -167,15 +182,6 @@ void handleNotesChanged(bool isFirstNote = false, byte channel = 1)
 
             // CV output here
             update_dac_output(currentNote - base_note, channel - 1);
-
-            if (isFirstNote)
-            {
-                handleGateChanged(true, channel);
-            }
-            else
-            {
-                pulseGate(channel); // Retrigger envelopes. Remove for legato effect.
-            }
         }
     }
 }
@@ -184,6 +190,8 @@ void handleNotesChanged(bool isFirstNote = false, byte channel = 1)
 
 void handleNoteOn(byte inChannel, byte inNote, byte inVelocity)
 {
+    blink_MIDI_LED();
+    
     switch(inChannel)
     {
         case 1:
@@ -198,16 +206,23 @@ void handleNoteOn(byte inChannel, byte inNote, byte inVelocity)
             break;
         case 10:
             // drum channel
-            break:
         default:
             break;
     }
+    
+    delay(1);
+    blink_MIDI_LED();
 }
 
 void handleNoteOff(byte inChannel, byte inNote, byte inVelocity)
 {
+    blink_MIDI_LED();
+
     midiNotes[inChannel - 1].remove(inNote);
     handleNotesChanged(false, inChannel);
+
+    delay(1);
+    blink_MIDI_LED();
 }
 
 // -----------------------------------------------------------------------------
@@ -228,6 +243,22 @@ void setup()
     pinMode(GatePin[0], OUTPUT);
     pinMode(GatePin[1], OUTPUT);
     pinMode(GatePin[2], OUTPUT);
+
+    // MIDI activity LED
+    pinMode(A0, OUTPUT);  // LED is ON by default
+
+    // quick "Hello" flashing
+    blink_MIDI_LED();  // LED is OFF
+    delay(100);
+    blink_MIDI_LED();  // LED is ON
+    delay(100);
+    blink_MIDI_LED();  // LED is OFF
+    delay(100);
+    blink_MIDI_LED();  // LED is ON
+    delay(100);
+    blink_MIDI_LED();  // LED is OFF
+
+
 
     MIDI.setHandleNoteOn(handleNoteOn);
     MIDI.setHandleNoteOff(handleNoteOff);
