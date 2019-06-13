@@ -1,12 +1,7 @@
 #include <MIDI.h>
 #include "noteList.h"
-//#include "pitches.h"
 
 MIDI_CREATE_DEFAULT_INSTANCE();
-
-
-//#define USE_UART 0
-
 
 
 
@@ -21,15 +16,6 @@ MIDI_CREATE_DEFAULT_INSTANCE();
  * Chan 6: Dac 1 tune, Dac 2 velocity, Dac 3 control
  * Chan 10: 9 Drums on Gates 1~6 and Dac 1~3 (with velocity)
  */
-
-
-
-
-
-
-
-
-
 
 
 
@@ -63,7 +49,7 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 
 // *********** 0.2 specific **************************************************************
 
-//static const unsigned gatePin = 2;
+// in Hardware V0.2, the Voltage reference is 2.5V x 2
 
 int dac_config = 0x50;
 // 0101 0000
@@ -89,11 +75,13 @@ int dac_data = 0;
 // DAC value for a semitone
 #define SEMI_TONE 68
 
+// with a power supply of 0..5V, we can reach only 5 octaves on CV output
 // 5 octaves -> 60 semitones (0..59)
 #define MIN_SEMITONE 0
 #define MAX_SEMITONE 59
 
-
+// by default, the lowest note (0V) is C2 (MIDI #36)
+byte base_note = 36;
 
 void update_dac_output(int setpoint, uint8_t dac)
 {
@@ -110,40 +98,8 @@ void update_dac_output(int setpoint, uint8_t dac)
 
 
 
-
-
-
-
-
-
-
+// array of pin numbers for Gate outputs
 byte unsigned GatePin[3];
-
-/*
-static const unsigned Gate1Pin     = 2;
-static const unsigned Gate2Pin     = 3;
-static const unsigned Gate3Pin     = 4;
-static const unsigned Gate4Pin     = 5;
-static const unsigned Gate5Pin     = 6;
-static const unsigned Gate6Pin     = 7;
-*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 static const unsigned sMaxNumNotes = 16;
@@ -193,7 +149,24 @@ void handleNotesChanged(bool isFirstNote = false, byte channel = 1)
         byte currentNote = 0;
         if (midiNotes[channel - 1].getLast(currentNote))
         {
+            if ((currentNote - base_note) > MAX_SEMITONE)
+            {
+              // example: if we receive note 100, we need to check if it's higher or not to the max note the DAC can produce
+              // note - base_note=?
+              // 100-36=64
+              // 64 is higher than 59
+              // 59+36=95
+              // so we trim note at max_note + base_note
+              currentNote = MAX_SEMITONE + base_note + 1;
+            }
+            
+            if ((currentNote - base_note) < MIN_SEMITONE)
+            {
+              currentNote = MIN_SEMITONE + base_note;
+            }
+
             // CV output here
+            update_dac_output(currentNote - base_note, channel - 1);
 
             if (isFirstNote)
             {
@@ -211,7 +184,6 @@ void handleNotesChanged(bool isFirstNote = false, byte channel = 1)
 
 void handleNoteOn(byte inChannel, byte inNote, byte inVelocity)
 {
-
     switch(inChannel)
     {
         case 1:
@@ -224,6 +196,9 @@ void handleNoteOn(byte inChannel, byte inNote, byte inVelocity)
             handleNotesChanged(firstNote, inChannel);
 
             break;
+        case 10:
+            // drum channel
+            break:
         default:
             break;
     }
@@ -239,14 +214,6 @@ void handleNoteOff(byte inChannel, byte inNote, byte inVelocity)
 
 void setup()
 {
-  #ifdef USE_UART
-  // conflit entre MIDI et port série (mêmes pins, vitesse différente)
-    //Serial.begin(115200);
-    //uart_init();
-    //stdout = &uart_output;
-    //stdin  = &uart_input;
-    //puts("UART init OK");
-  #endif
 
     // Initiate SPI in Mode 0 with MSB first, NO interrupts and a clock of F_CPU/2 
     setupSPI(SPI_MODE_0, SPI_MSB, SPI_NO_INTERRUPT, SPI_MASTER_CLK2);
@@ -261,20 +228,6 @@ void setup()
     pinMode(GatePin[0], OUTPUT);
     pinMode(GatePin[1], OUTPUT);
     pinMode(GatePin[2], OUTPUT);
-/*
-    pinMode(Gate1Pin, OUTPUT);
-    pinMode(Gate2Pin, OUTPUT);
-    pinMode(Gate3Pin, OUTPUT);
-    pinMode(Gate4Pin, OUTPUT);
-    pinMode(Gate5Pin, OUTPUT);
-    pinMode(Gate6Pin, OUTPUT);
-*/
-
-
-
-  
-//    pinMode(sGatePin,     OUTPUT);
-//    pinMode(sAudioOutPin, OUTPUT);
 
     MIDI.setHandleNoteOn(handleNoteOn);
     MIDI.setHandleNoteOff(handleNoteOff);
