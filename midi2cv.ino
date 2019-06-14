@@ -94,6 +94,10 @@ void update_dac_output(int setpoint, uint8_t dac)
   #endif
 }
 
+// Front Panel Buttons. BTN1 on left
+#define BTN1 A1
+#define BTN2 A2
+
 // *********** END of 0.2 specific ********************************************************
 
 
@@ -225,6 +229,44 @@ void handleNoteOff(byte inChannel, byte inNote, byte inVelocity)
     blink_MIDI_LED();
 }
 
+void allNotesOff(byte inChannel)
+{
+  //digitalWrite(2, HIGH);
+  byte currentNote = 0;
+
+  // loop until note list is empty
+  while(midiNotes[inChannel - 1].empty() == false)
+  {
+    // get the last note in the list
+    midiNotes[inChannel - 1].getLast(currentNote);
+    // remove that note from the list
+    midiNotes[inChannel - 1].remove(currentNote);
+  }
+
+  // stop Gate output
+  handleGateChanged(false, inChannel);
+  // reset DAC ouput
+  update_dac_output(0, inChannel - 1);
+  //digitalWrite(2, LOW);
+}
+
+void handleControlChange(byte inChannel, byte inNumber, byte inValue)
+{
+  blink_MIDI_LED();
+
+  switch(inNumber)
+  {
+    case 123:   // Channel Mode Message - All Notes Off
+      allNotesOff(inChannel);
+      break;
+    default:
+      break;
+  }
+
+  delay(1);
+  blink_MIDI_LED();
+}
+
 // -----------------------------------------------------------------------------
 
 void setup()
@@ -237,14 +279,27 @@ void setup()
     SETUP_DAC(1);   // second DAC
     SETUP_DAC(2);   // third DAC
 
+    // initialise DAC outputs
+    update_dac_output(0, 0);
+    update_dac_output(0, 1);
+    update_dac_output(0, 2);
+
+
     GatePin[0] = 3;
     GatePin[1] = 5;
     GatePin[2] = 7;
-    pinMode(GatePin[0], OUTPUT);
-    pinMode(GatePin[1], OUTPUT);
-    pinMode(GatePin[2], OUTPUT);
+    pinMode(GatePin[0], OUTPUT);  // active on HIGH
+    pinMode(GatePin[1], OUTPUT);  // active on HIGH
+    pinMode(GatePin[2], OUTPUT);  // active on HIGH
 
-    // MIDI activity LED
+    // for TEST
+    pinMode(2, OUTPUT);
+
+    // Front Panel Buttons, active on LOW
+    pinMode(BTN1, INPUT_PULLUP);
+    pinMode(BTN2, INPUT_PULLUP);
+
+    // MIDI activity LED, active on LOW
     pinMode(A0, OUTPUT);  // LED is ON by default
 
     // quick "Hello" flashing
@@ -263,10 +318,23 @@ void setup()
     MIDI.setHandleNoteOn(handleNoteOn);
     MIDI.setHandleNoteOff(handleNoteOff);
 
+    MIDI.setHandleControlChange(handleControlChange);
+
     MIDI.begin(MIDI_CHANNEL_OMNI);
 }
 
 void loop()
 {
-    MIDI.read();
+  // PANIC?
+  // if both buttons are pressed,
+  if ((digitalRead(BTN1) == LOW) && (digitalRead(BTN2) == LOW))
+  {
+    // removes all stored notes
+    for (byte i = 1; i < 4; i++)
+    {
+      allNotesOff(i);
+    }
+  }
+
+  MIDI.read();
 }
