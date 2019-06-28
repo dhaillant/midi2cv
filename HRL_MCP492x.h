@@ -20,7 +20,11 @@ extern "C" {
 #define DAC_PIN PB0
 #endif
 
-
+/* 
+ * #CS is the "Chip Select pin Number", for SPI communication.
+ * One CS pin per DAC is reserved on the µC. 3 DACs = 3 dedicated pins.
+ * SETUP_DAC sets the pin as an output
+ */
 #define SETUP_DAC(dac)    DAC_DDR |= (1 << (DAC_PIN + dac))   // Set up #CS for the DAC
 #define SELECT_DAC(dac)   DAC_PORT &= ~(1 << (DAC_PIN + dac)) // Set #CS for DAC low, selecting it
 #define DESELECT_DAC(dac) DAC_PORT |= (1 << (DAC_PIN + dac))  // Set #CS for DAC high, deselecting it

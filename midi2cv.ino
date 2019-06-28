@@ -1,6 +1,7 @@
 #include <MIDI.h>
 #include "noteList.h"
 
+
 MIDI_CREATE_DEFAULT_INSTANCE();
 
 
@@ -17,7 +18,9 @@ MIDI_CREATE_DEFAULT_INSTANCE();
  * Chan 10: 9 Drums on Gates 1~6 and Dac 1~3 (with velocity)
  */
 
-
+byte mode = 0 ;
+// mode from 0 to 5 = 6 modes
+#define MAX_MODE 6
 
 
 // SPI driver
@@ -103,7 +106,11 @@ void update_dac_output(int setpoint, uint8_t dac)
 
 
 // array of pin numbers for Gate outputs
-byte unsigned GatePin[3];
+// this array values will depend on MODE
+byte unsigned GatePin[6];
+
+// array of pin numbers for Mode LEDs
+byte unsigned ModeLEDPin[6];
 
 
 static const unsigned sMaxNumNotes = 16;
@@ -141,6 +148,14 @@ inline void pulseGate(byte channel)
     handleGateChanged(true, channel);
 }
 
+
+inline void handleDrumGateChanged(bool inGateActive, byte drum)
+{
+    // if inGateActive is true, outputs HIGH, else, outputs LOW
+    digitalWrite(GatePin[drum - 1], inGateActive ? HIGH : LOW);
+}
+
+
 // -----------------------------------------------------------------------------
 
 void handleNotesChanged(bool isFirstNote = false, byte channel = 1)
@@ -151,6 +166,13 @@ void handleNotesChanged(bool isFirstNote = false, byte channel = 1)
     }
     else
     {
+      if (channel == 10)
+      {
+        
+        
+      }
+      else
+      {
         // Possible playing modes:
         // Mono Low:  use midiNotes.getLow
         // Mono High: use midiNotes.getHigh
@@ -186,7 +208,8 @@ void handleNotesChanged(bool isFirstNote = false, byte channel = 1)
 
             // CV output here
             update_dac_output(currentNote - base_note, channel - 1);
-        }
+         }
+      }
     }
 }
 
@@ -210,6 +233,8 @@ void handleNoteOn(byte inChannel, byte inNote, byte inVelocity)
             break;
         case 10:
             // drum channel
+
+            
         default:
             break;
     }
@@ -228,6 +253,7 @@ void handleNoteOff(byte inChannel, byte inNote, byte inVelocity)
     delay(1);
     blink_MIDI_LED();
 }
+
 
 void allNotesOff(byte inChannel)
 {
@@ -269,35 +295,80 @@ void handleControlChange(byte inChannel, byte inNumber, byte inValue)
 
 // -----------------------------------------------------------------------------
 
+void activate_mode(byte inMode)
+{
+  mode = inMode;
+  switch (mode)
+  {
+    case 0:
+      /*
+       * Mode 0 is:
+       * Chan 1: Dac 1 / Gates 1&2
+       * Chan 2: Dac 2 / Gates 3&4
+       * Chan 3: Dac 3 / Gates 5&6
+       * 
+       * Mono Last
+       */
+
+      // mapping Gates to pins
+      GatePin[0] = 3;
+      GatePin[1] = 5;
+      GatePin[2] = 7;
+
+      break;
+    case 5:
+      /*
+       * Mode 5 is:
+       * Chan 10: Gates 1 to 6 plus DAC 1 to 3 with velocity
+       * 
+       * Poly
+       */
+
+      // mapping Gates to pins
+      for (byte i = 0; i < 6; i++)
+      {
+        GatePin[i] = i + 2;
+      }
+
+      break;
+    default:
+      break;
+  }    
+}
+
 void setup()
 {
-
     // Initiate SPI in Mode 0 with MSB first, NO interrupts and a clock of F_CPU/2 
     setupSPI(SPI_MODE_0, SPI_MSB, SPI_NO_INTERRUPT, SPI_MASTER_CLK2);
 
-    SETUP_DAC(0);   // first DAC
-    SETUP_DAC(1);   // second DAC
-    SETUP_DAC(2);   // third DAC
+    // Setup DACs is selecting the SPI "Chip Select" pins for each DAC chip. DAC_PIN + offset (DAC_PIN is PB0, )
+    SETUP_DAC(0);   // first DAC: PB0
+    SETUP_DAC(1);   // second DAC: PB1
+    SETUP_DAC(2);   // third DAC: PB2
 
-    // initialise DAC outputs
+    // initialise DAC outputs at 0
     update_dac_output(0, 0);
     update_dac_output(0, 1);
     update_dac_output(0, 2);
 
+    // The midi2cv will react differently, depending on the selected mode.
+    // By default, mode 0 is selected
+    activate_mode(0);
+    
+    // 6 pins (PD2 to PD7) are digital outputs.
+    for (byte i = 0; i < 6; i++)
+    {
+      // mapping Mode LEDs
+      ModeLEDPin[i] = 2 + i;
 
-    GatePin[0] = 3;
-    GatePin[1] = 5;
-    GatePin[2] = 7;
-    pinMode(GatePin[0], OUTPUT);  // active on HIGH
-    pinMode(GatePin[1], OUTPUT);  // active on HIGH
-    pinMode(GatePin[2], OUTPUT);  // active on HIGH
-
-    // for TEST
-    pinMode(2, OUTPUT);
+      // set the pins as Outputs
+      pinMode(ModeLEDPin[i], OUTPUT);  // active on HIGH
+    }
 
     // Front Panel Buttons, active on LOW
     pinMode(BTN1, INPUT_PULLUP);
     pinMode(BTN2, INPUT_PULLUP);
+    // /!\ Important: No hardware debounce. Software debounce required.
 
     // MIDI activity LED, active on LOW
     pinMode(A0, OUTPUT);  // LED is ON by default
@@ -314,27 +385,100 @@ void setup()
     blink_MIDI_LED();  // LED is OFF
 
 
-
+    // Attach Callback functions to handle various MIDI incoming messages
     MIDI.setHandleNoteOn(handleNoteOn);
     MIDI.setHandleNoteOff(handleNoteOff);
-
     MIDI.setHandleControlChange(handleControlChange);
 
+    // Start listening ALL MIDI channels
     MIDI.begin(MIDI_CHANNEL_OMNI);
 }
 
+#define BTN1_PRESSED (digitalRead(BTN1) == LOW)
+#define BTN2_PRESSED (digitalRead(BTN2) == LOW)
+
+void reset_LEDs(void)
+{
+  for (byte i = 0; i < MAX_MODE; i++)
+  {
+    digitalWrite(ModeLEDPin[i], LOW);
+  }
+}
+
+void show_current_mode(void)
+{
+  reset_LEDs();
+  digitalWrite(ModeLEDPin[mode], HIGH);
+}
+
+void debounce(void)
+{
+  delay(20);
+}
+
+void cycle_mode(void)
+{
+  mode++;
+  if (mode >= MAX_MODE)
+  {
+    mode = 0;
+  }
+  show_current_mode();
+}
+
+void panic(void)
+{
+  // removes all stored notes
+
+  // for each channel
+  for (byte i = 1; i < 4; i++)
+  {
+    allNotesOff(i);
+  }
+}
+
+//byte btn2_state = RELEASED;
+
 void loop()
 {
+  // Managing Button presses
+  if (BTN1_PRESSED)
+  {
+    panic();
+    /*
+     * while button pressed
+     *  show current mode
+     *  if button 2 pressed (detect rise)
+     *    debounce
+     *    cycle mode
+     *   
+     */
+    show_current_mode();
+    while BTN1_PRESSED
+    {
+      if (BTN2_PRESSED)
+      {
+        cycle_mode();
+        debounce();
+        while (BTN2_PRESSED);
+        debounce();
+      }
+    }
+    reset_LEDs();
+  }
+
   // PANIC?
   // if both buttons are pressed,
-  if ((digitalRead(BTN1) == LOW) && (digitalRead(BTN2) == LOW))
+  //if ((digitalRead(BTN1) == LOW) && (digitalRead(BTN2) == LOW))
+
+  // if either buttons are pressed,
+  // if (BTN1_PRESSED || BTN2_PRESSED)
+  if (BTN2_PRESSED)
   {
-    // removes all stored notes
-    for (byte i = 1; i < 4; i++)
-    {
-      allNotesOff(i);
-    }
+    panic();
   }
+
+
 
   MIDI.read();
 }
