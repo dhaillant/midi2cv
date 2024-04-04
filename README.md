@@ -17,6 +17,6 @@ MIDI monitor is a side project, it uses an I²C OLED screen to display as many i
 It's a useful tool to help debug MIDI communication.
 
 ## Euclid
-Eucid is the adaptation of HAGIWO's Euclidian Rhythm Sequencer (ユークリッドリズムシーケンサー), but for MIDI.
+Euclid is the adaptation of HAGIWO's Euclidian Rhythm Sequencer (ユークリッドリズムシーケンサー), but for MIDI.
 This version uses MIDI Clock messages (24 PPQN) instead of Trig Pulses.
 Original code and documentation: https://note.com/solder_state/n/n433b32ea6dbc
