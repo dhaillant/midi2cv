@@ -22,9 +22,6 @@
  */
 
 
-//#include <MIDI.h>
-//MIDI_CREATE_DEFAULT_INSTANCE(); // instantiates MIDI stuff
-
   #define MIDI_IN 0
   #define MIDI_LED A3
 
@@ -41,10 +38,6 @@ void toggle_MIDI_LED(void)
   PORTC ^= (1 << 3);
 }
 
-
-//Encoder setting
-#define  ENCODER_OPTIMIZE_INTERRUPTS //countermeasure of encoder noise
-//#include <Encoder.h>
 
 //Oled setting
 #include<Wire.h>
@@ -85,17 +78,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
   KeyDetector myKeyDetector(keys, sizeof(keys)/sizeof(Key), 10, 0, true);
   // true is for PULLUP
 #endif
-
-//rotery encoder
-//Encoder myEnc(3, 2);//use 3pin 2pin
-//int oldPosition  = -999;
-//int newPosition = -999;
-//int i = 0;
-
-//push button
-//bool sw = 0;//push button
-//bool old_sw;//countermeasure of sw chattering
-//unsigned long sw_timer = 0;//countermeasure of sw chattering
 
 //each channel param
 byte hits[6] = { 4, 4, 5, 3, 2, 16};//each channel hits
@@ -205,17 +187,7 @@ void loop() {
   if (Serial.available() > 0) {
     // get incoming byte:
     inByte = Serial.read();
-/*    if (inByte == MIDI_CLOCK_BYTE)
-    {
-      toggle_MIDI_LED();
-      if (midi_clock_counter % 6 == 0)  // every 6 clock steps = one sixteenth
-      {
-        trg_in = 1;         // Trig ON
-      }
-      midi_clock_counter++;
-    } else {
-//      toggle_MIDI_LED();
-    }*/
+
     switch (inByte) {
       case MIDI_BYTE_CLOCK:
         midi_clock_counter = midi_clock_counter % 96; // this will reset the clock_step to 0 after 96 ppqn are received,
@@ -230,20 +202,16 @@ void loop() {
         break;
       case MIDI_BYTE_START:
         reset_steps();
-        //midi_clock_counter = 0;
         break;
       case MIDI_BYTE_STOP:
         reset_steps();
-        //midi_clock_counter = 0;
         break;
       default:
-//      toggle_MIDI_LED();
         break;
     }
   }
 
-  
-  
+
   myKeyDetector.detect();
 
   if (myKeyDetector.trigger) {
@@ -325,7 +293,6 @@ void loop() {
   }
 
   //-----------------trigger detect & output----------------------
-//  trg_in = digitalRead(CLOCK_IN_PIN);//external trigger in
   if (old_trg_in == 0 && trg_in == 1) {
     gate_timer = millis();
     for (uint8_t i = 0; i <= 5; i++) {
