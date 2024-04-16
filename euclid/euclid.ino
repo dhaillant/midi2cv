@@ -21,16 +21,49 @@
  * 
  */
 
+//#define MIDI8D_HW
+#define MDI2CV_HW_05
+//#define MDI2CV_HW_06
 
-  #define MIDI_IN 0
-  #define MIDI_LED A3
+#ifdef MIDI8D_HW
+  #define MIDI8D
+  #define SIX_DIGITAL_OUTPUTS
+#endif
 
-  #define MIDI_BYTE_CLOCK 0xF8
-  #define MIDI_BYTE_START 0xFA
-  #define MIDI_BYTE_STOP 0xFC
-  #define MIDI_BYTE_CONTINUE 0xFB
-  
-  uint8_t midi_clock_counter = 0;
+#ifdef MDI2CV_HW_05
+  #define MIDI2CV
+  #define I2C_DISPLAY
+  #define DACS
+#endif
+
+#ifdef MDI2CV_HW_06
+  #define MIDI2CV
+  #define SPI_DISPLAY
+  #define DACS
+#endif
+
+// If using a SPI display (HW >= 0.6) comment the following line
+//#define I2C_DISPLAY
+// I²C needs 29 more bytes than SPI
+
+// If 6 digital outputs are available, uncomment the following line:
+//#define SIX_DIGITAL_OUTPUTS
+
+// If 2 SPI DACs are available, uncomment the following line: (16 bytes)
+//#define DACS
+
+
+// MIDI *************************************
+#define MIDI_BAUD_RATE 31250
+#define MIDI_IN 0
+#define MIDI_LED A3
+
+#define MIDI_BYTE_CLOCK 0xF8
+#define MIDI_BYTE_START 0xFA
+#define MIDI_BYTE_STOP 0xFC
+#define MIDI_BYTE_CONTINUE 0xFB
+
+uint8_t midi_clock_counter = 0;
 
 void toggle_MIDI_LED(void)
 {
@@ -38,32 +71,85 @@ void toggle_MIDI_LED(void)
   PORTC ^= (1 << 3);
 }
 
+// screen *************************************
+/*
+  OLED Displays require 1 byte for every 8 pixels
+  The 128x64 version requires 1K of SRAM
+*/
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
-//Oled setting
-#include<Wire.h>
-#include<Adafruit_GFX.h>
-#include<Adafruit_SSD1306.h>
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
 
-#define OLED_ADDRESS 0x3C
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
+#ifdef I2C_DISPLAY
+  #include <Wire.h>
 
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+  #define OLED_ADDRESS 0x3C
+
+  Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+#else
+  #include <SPI.h>
+
+  #ifdef SOFT_SPI
+    // Declaration for SSD1306 display connected using software SPI (default case):
+    #define OLED_COPI  11
+    #define OLED_CLK   13
+    #define OLED_DC    7
+    #define OLED_CS    8
+    #define OLED_RESET 6
+    Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
+      OLED_COPI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
+  #else  
+    // Declaration for SSD1306 display connected using hardware SPI
+    #define OLED_DC     7
+    #define OLED_CS     8
+    #define OLED_RESET  6
+    Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
+      &SPI, OLED_DC, OLED_RESET, OLED_CS);
+  #endif
+#endif
+
+
 
 // Keys *************************************
 #define UP_PIN A0
 #define ENTER_PIN A1
 #define DOWN_PIN A2
 
+#define MAX_EUCLID_OUTPUTS 6        // number of Euclidian outputs
+
 // GATEs *************************************
 #define GATE1_PIN 2          // D2
 #define GATE2_PIN 3          // D3
 #define GATE3_PIN 4          // D4
 #define GATE4_PIN 5          // D5
-#define GATE5_PIN 6          // D6
-#define GATE6_PIN 7          // D7
 
-#define CLOCK_IN_PIN 0
+#ifdef SIX_DIGITAL_OUTPUTS
+  #define GATE5_PIN 6          // D6
+  #define GATE6_PIN 7          // D7
+#endif
+
+
+//#define DACS
+#ifdef DACS
+  // DACs ************************************
+  #include <MCP48xx.h>
+  
+  // Define the MCP4822 instance, giving it the CS (Chip Select) pin
+  // The constructor will also initialize the SPI library
+  // We can also define a MCP4812 or MCP4802
+  MCP4822 dac1(9);
+  MCP4822 dac2(10);
+  
+  // in mV
+  #define DAC_MAX_VAL 2500
+  #define DAC_MIN_VAL 0
+#endif
+
+
+
+//#define CLOCK_IN_PIN 0
 
 #define KEYDETECTOR
 #ifdef KEYDETECTOR
@@ -133,16 +219,76 @@ const byte y16[16] = {0,  1,  4,  9,  15, 21, 26, 29, 30, 29, 26, 21, 15, 9,  4,
 
 
 //random assign
-byte hit_occ[6] = {0, 10, 20, 40, 40, 20}; //random change rate of occurrence
-byte off_occ[6] = {0, 20, 20, 20, 40, 20}; //random change rate of occurrence
-byte mute_occ[6] = {20, 20, 20, 20, 20, 20}; //random change rate of occurrence
-byte hit_rng_max[6] = {0, 6, 16, 8, 9, 16}; //random change range of max
-byte hit_rng_min[6] = {0, 1, 6, 1, 5, 10}; //random change range of max
+const byte hit_occ[6] = {0, 10, 20, 40, 40, 20}; //random change rate of occurrence
+const byte off_occ[6] = {0, 20, 20, 20, 40, 20}; //random change rate of occurrence
+const byte mute_occ[6] = {20, 20, 20, 20, 20, 20}; //random change rate of occurrence
+const byte hit_rng_max[6] = {0, 6, 16, 8, 9, 16}; //random change range of max
+const byte hit_rng_min[6] = {0, 1, 6, 1, 5, 10}; //random change range of max
 
 byte bar_now = 1;//count 16 steps, the bar will increase by 1.
-byte bar_max[4] = {2, 4, 8, 16} ;//selectable bar
+const byte bar_max[4] = {2, 4, 8, 16} ;//selectable bar
 byte bar_select = 1;//selected bar
 byte step_cnt = 0;//count 16 steps, the bar will increase by 1.
+
+
+void write_output(uint8_t n, uint8_t value)
+{
+  #ifdef MIDI2CV
+    switch (n)
+    {
+      case 0:
+        dac1.setVoltageA((value == HIGH) ? DAC_MAX_VAL : DAC_MIN_VAL);
+        dac1.updateDAC();
+        //digitalWrite(GATE1_PIN, value);
+        break;
+      case 1:
+        digitalWrite(GATE1_PIN, value);
+        break;
+      case 2:
+        dac1.setVoltageB((value == HIGH) ? DAC_MAX_VAL : DAC_MIN_VAL);
+        dac1.updateDAC();
+        //digitalWrite(GATE3_PIN, value);
+        break;
+      case 3:
+        digitalWrite(GATE2_PIN, value);
+        break;
+      case 4:
+        dac2.setVoltageA((value == HIGH) ? DAC_MAX_VAL : DAC_MIN_VAL);
+        dac2.updateDAC();
+        //digitalWrite(GATE5_PIN, value);
+        break;
+      case 5:
+        digitalWrite(GATE3_PIN, value);
+        break;
+    }
+  #endif
+  #ifdef MIDI8D
+    switch (n)
+    {
+      case 0:
+        digitalWrite(GATE1_PIN, value);
+        break;
+      case 1:
+        digitalWrite(GATE2_PIN, value);
+        break;
+      case 2:
+        digitalWrite(GATE3_PIN, value);
+        break;
+      case 3:
+        digitalWrite(GATE4_PIN, value);
+        break;
+      case 4:
+        digitalWrite(GATE5_PIN, value);
+        break;
+      case 5:
+        digitalWrite(GATE6_PIN, value);
+        break;
+    }
+  #endif
+}
+
+
+
 
 void setup() {
   // OLED setting
@@ -160,12 +306,42 @@ void setup() {
   pinMode(GATE2_PIN,  OUTPUT); //CH2
   pinMode(GATE3_PIN,  OUTPUT); //CH3
   pinMode(GATE4_PIN,  OUTPUT); //CH4
-  pinMode(GATE5_PIN,  OUTPUT); //CH5
-  pinMode(GATE6_PIN,  OUTPUT); //CH6
+  #ifdef SIX_DIGITAL_OUTPUTS
+    pinMode(GATE5_PIN,  OUTPUT); //CH5
+    pinMode(GATE6_PIN,  OUTPUT); //CH6
+  #endif
+
+  #ifdef DACS
+    dac1.init();
+    dac2.init();
+  
+    // The channels are turned off at startup so we need to turn the channel we need on
+    dac1.turnOnChannelA();
+    dac1.turnOnChannelB();
+    dac2.turnOnChannelA();
+    dac2.turnOnChannelB();
+  
+    // We configure the channels in High gain
+    // It is also the default value so it is not really needed
+    dac1.setGainA(MCP4822::High);
+    dac1.setGainB(MCP4822::High);
+    dac2.setGainA(MCP4822::High);
+    dac2.setGainB(MCP4822::High);
+  
+    dac1.setVoltageA(0);
+    dac1.setVoltageB(0);
+    dac2.setVoltageA(0);
+    dac2.setVoltageB(0);
+  
+    // We send the command to the MCP4822
+    // This is needed every time we make any change
+    dac1.updateDAC();
+    dac2.updateDAC();
+  #endif  
 
 
   // Set MIDI baud rate:
-  Serial.begin(31250);
+  Serial.begin(MIDI_BAUD_RATE);
 
   pinMode(MIDI_LED,   OUTPUT);
   digitalWrite(MIDI_LED, LOW);
@@ -303,31 +479,7 @@ void loop() {
     }
     for (k = 0; k <= 5; k++) {//output gate signal
       if (offset_buf[k][playing_step[k]] == 1 && mute[k] == 0) {
-        switch (k) {
-          case 0://CH1
-            digitalWrite(GATE1_PIN, HIGH);
-            break;
-
-          case 1://CH2
-            digitalWrite(GATE2_PIN, HIGH);
-            break;
-
-          case 2://CH3
-            digitalWrite(GATE3_PIN, HIGH);
-            break;
-
-          case 3://CH4
-            digitalWrite(GATE4_PIN, HIGH);
-            break;
-
-          case 4://CH5
-            digitalWrite(GATE5_PIN, HIGH);
-            break;
-
-          case 5://CH6
-            digitalWrite(GATE6_PIN, HIGH);
-            break;
-        }
+        write_output(k, HIGH);
       }
     }
     disp_reflesh = 1;//Updates the display where the trigger was entered.If it update it all the time, the response of gate on will be worse.
@@ -346,12 +498,10 @@ void loop() {
   }
 
   if  (gate_timer + 10 <= millis()) { //off all gate , gate time is 10msec
-    digitalWrite(GATE1_PIN, LOW);
-    digitalWrite(GATE2_PIN, LOW);
-    digitalWrite(GATE3_PIN, LOW);
-    digitalWrite(GATE4_PIN, LOW);
-    digitalWrite(GATE5_PIN, LOW);
-    digitalWrite(GATE6_PIN, LOW);
+    for (uint8_t i = 0; i < MAX_EUCLID_OUTPUTS; i++)
+    {
+      write_output(i, LOW);
+    }
   }
 
 
@@ -390,24 +540,24 @@ void OLED_display() {
     display.print(select_ch + 1);
   }
   else if (select_ch == 6) { //random mode
-    display.print("R");
+    display.print(F("R"));
   }
   display.setCursor(120, 9);
   if (select_ch != 6) { // not random mode
-    display.print("H");
+    display.print(F("H"));
   }
   else if (select_ch == 6) { //random mode
     display.print("O");
   }
   display.setCursor(120, 18);
   if (select_ch != 6) { // not random mode
-    display.print("O");
+    display.print(F("O"));
     display.setCursor(0, 36);
-    display.print("L");
+    display.print(F("L"));
     display.setCursor(0, 45);
-    display.print("M");
+    display.print(F("M"));
     display.setCursor(0, 54);
-    display.print("R");
+    display.print(F("R"));
   }
 
 
