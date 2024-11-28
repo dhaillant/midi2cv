@@ -22,8 +22,8 @@
  */
 
 //#define MIDI8D_HW
-#define MDI2CV_HW_05
-//#define MDI2CV_HW_06
+//#define MDI2CV_HW_05
+#define MDI2CV_HW_06
 
 #ifdef MIDI8D_HW
   #define MIDI8D
