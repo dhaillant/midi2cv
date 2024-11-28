@@ -1,10 +1,15 @@
 /**************************************************************************
  MIDI 2 CV
- HW 0.5.1
+ HW 0.5.1 & 0.6 SPI
 
  Monitor MIDI IN messages, scroll text with display buffer manipulation
  
  **************************************************************************/
+
+#define VER_MESSAGE "Ver. 20241128"
+
+// If using a SPI display (HW >= 0.6) comment the following line
+//#define DISP_I2C
 
 #define DEBUG
 
@@ -33,8 +38,11 @@ void toggle_MIDI_LED(void)
 // max queue allowed for display: when Serial queue is > MAX_DISP_QUEUE then, message isn't displayed, in order to speed up treatment of incoming MIDI messages
 #define MAX_DISP_QUEUE 10
 
-
-#include <Wire.h>
+#ifdef DISP_I2C
+  #include <Wire.h>
+#else
+  #include <SPI.h>
+#endif
 
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -42,23 +50,42 @@ void toggle_MIDI_LED(void)
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-// The pins for I2C are defined by the Wire-library. 
-// On an arduino UNO:       A4(SDA), A5(SCL)
-#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-#define SCREEN_ADDRESS 0xBC ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-
-/*
- * BC =    1011 1100
- * 78 =    0111 1000
- * 178 = 1 0111 1000
- * 3C =    0011 1100
- * 
- * See https://community.element14.com/members-area/personalblogs/b/blog/posts/oled-i2c-silkscreens-are-wrong-or-are-they
- */
- 
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-
+#ifdef DISP_I2C
+  // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+  // The pins for I2C are defined by the Wire-library. 
+  // On an arduino UNO:       A4(SDA), A5(SCL)
+  #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+  #define SCREEN_ADDRESS 0xBC ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+  
+  /*
+   * BC =    1011 1100
+   * 78 =    0111 1000
+   * 178 = 1 0111 1000
+   * 3C =    0011 1100
+   * 
+   * See https://community.element14.com/members-area/personalblogs/b/blog/posts/oled-i2c-silkscreens-are-wrong-or-are-they
+   */
+   
+  Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+#else
+  #ifdef SOFT_SPI
+    // Declaration for SSD1306 display connected using software SPI (default case):
+    #define OLED_COPI  11
+    #define OLED_CLK   13
+    #define OLED_DC    7
+    #define OLED_CS    8
+    #define OLED_RESET 6
+    Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
+      OLED_COPI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
+  #else  
+    // Declaration for SSD1306 display connected using hardware SPI
+    #define OLED_DC     7
+    #define OLED_CS     8
+    #define OLED_RESET  6
+    Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
+      &SPI, OLED_DC, OLED_RESET, OLED_CS);
+  #endif
+#endif
 
 #include "scrolltext.h"
 
@@ -105,6 +132,8 @@ void setup()
   MIDI.setHandleActiveSensing(handleActiveSensing);
   MIDI.setHandleSystemReset(handleSystemReset);
 
+  MIDI.setHandleSystemExclusive(handleSystemExclusive);
+
   // Initiate MIDI communications
   MIDI.begin(MIDI_CHANNEL);
 
@@ -114,11 +143,14 @@ void setup()
   
   // *** OLED display initialization ***
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
-  {
-    for(;;); // Don't proceed, loop forever
-  }
-
+  #ifdef DISP_I2C
+    if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
+  #else
+    if(!display.begin(SSD1306_SWITCHCAPVCC))
+  #endif
+    {
+      for(;;); // Don't proceed, loop forever
+    }
 
   display.clearDisplay();                             // Clear the buffer
   display.setTextSize(1);                             // Normal 1:1 pixel scale
@@ -129,11 +161,11 @@ void setup()
 
   st.initCursor();            // set to 1st line in scroll zone
 
-  display.println(F("Ver. 20240327"));
+  st.println(F(VER_MESSAGE));
   
   #ifdef DEBUG
-    display.print(F("Free: "));
-    display.println(mu_freeRam());
+    st.print(F("Free: "));
+    st.println(mu_freeRam());
   #endif
 
   display.display();          // update display
@@ -259,7 +291,7 @@ void handleProgramChange(byte channel, byte number)
 }
 
 
-void handleSystemExclusive(byte* array, unsigned size);
+
 void handleTimeCodeQuarterFrame(byte data);
 void handleSongPosition(unsigned int beats);
 void handleSongSelect(byte songnumber);
@@ -356,6 +388,50 @@ void handleSystemReset(void)
   if (Serial.available() < MAX_DISP_QUEUE)
   {
     st.println(F("RESET"));
+    st.show();
+  }
+
+  toggle_MIDI_LED();
+}
+
+#define MAX_CHAR_COL 21
+
+void handleSystemExclusive(byte* data, unsigned size)
+{
+  toggle_MIDI_LED();
+
+  // display only if queue isn't too long
+  if (Serial.available() < MAX_DISP_QUEUE)
+  {
+    // we print SysEx in multiple lines
+    // 1st line
+    st.print(F("SysEx "));
+    char str[4] = "";
+    snprintf(str, 4, "%02d:", size);          // length of SysEx message
+    st.println(str);
+
+    uint8_t count = 0;                        // determine how many bytes (in hexadecimal format + space char) are added to the current line
+
+    for (uint8_t i = 0; i < size; i++)        // browse all data (including the 1st and last bytes)
+    {
+      snprintf(str, 4, "%02X ", data[i]);     // format the byte in hexadecimal + space char
+      count += 3;                             // "%02X " is 3 characters
+
+      if (count == MAX_CHAR_COL || i == size - 1)
+      {
+        // Display the last data on the current line on the OLED and pass to next line
+        st.println(str);
+        
+        // Clear the line buffer and reset the character count
+        str[0] = '\0';
+        count = 0;
+      }
+      else
+      {
+        st.print(str);    // add the string to the current line
+      }
+    }
+
     st.show();
   }
 

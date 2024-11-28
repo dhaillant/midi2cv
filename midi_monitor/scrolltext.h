@@ -16,10 +16,12 @@ class ScrollText
   public:
     ScrollText(Adafruit_SSD1306* d, byte start_line, byte last_line);
     void show(void);
+
     void print(char* text);
     void print(const __FlashStringHelper *ifsh);
 
     void println(char* text);
+    void println(int value);
     void println(const __FlashStringHelper *ifsh);
     
     void scroll(void);
@@ -61,6 +63,14 @@ void ScrollText::println(char* text)
 {
   scroll_if_required();
   _display->println(text);
+
+  _current_line++;
+}
+
+void ScrollText::println(int value)
+{
+  scroll_if_required();
+  _display->println(value);
 
   _current_line++;
 }
